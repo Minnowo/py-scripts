@@ -6,7 +6,6 @@ import datetime
 FFPROBE_PATH = os.path.join(os.path.dirname(__file__), "..\\.ffmpeg\\ffprobe.exe")
 FFMPEG_PATH = os.path.join(os.path.dirname(__file__), "..\\.ffmpeg\\ffmpeg.exe")
 
-
 if (os.name == "nt"):
     NO_TEMP = "NUL"
 else:
@@ -125,7 +124,7 @@ def get_file_duration(path: str):
 
 
 
-def compress_file(path: str, target_size_mb: int, video_bitrate_percent: float):
+def compress_file(path: str, target_size_mb: int, video_bitrate_percent: float, new_size: tuple = None):
 
     if target_size_mb <= 0:
         raise ValueError(f"you cannot specify a target size <= 0 mb: {target_size_mb}")
@@ -178,8 +177,9 @@ def compress_file(path: str, target_size_mb: int, video_bitrate_percent: float):
     print(f"target video bitrate : {video_bitrate}")
     print(f"target audio bitrate : {audio_bitrate}")
 
-    audio_path = get_temp_filename(temp_dir, "audio", "mp3")
-    video_path = get_temp_filename(temp_dir, "video", "mp4")
+    audio_path  = get_temp_filename(temp_dir, "audio", "mp3")
+    video_path  = get_temp_filename(temp_dir, "video", "mp4")
+    video_path2 = get_temp_filename(temp_dir, "video", "mp4")
 
 
     if has_audio and audio_bitrate > 0:
@@ -192,7 +192,15 @@ def compress_file(path: str, target_size_mb: int, video_bitrate_percent: float):
 
         print("compressing video...")
 
-        compress_video(path, video_path, video_bitrate)
+        # if new_size is not None:
+
+        #     reduce_resolution(path, video_path2, new_size) 
+
+        #     compress_video(video_path2, video_path, video_bitrate)
+
+        # else:
+        
+        compress_video(path, video_path, video_bitrate, new_size)
 
     output = get_temp_filename(file_dir, os.path.basename(path) + "-", "mp4")
     combine_to_mp4(audio_path, video_path, output)
@@ -229,6 +237,19 @@ def combine_to_mp4(audio_path: str, video_path: str, output_path: str):
 
 
 
+def reduce_resolution(path: str, output_path: str, new_size: tuple):
+
+    check_file_exists(path)
+
+    (width, height) = new_size
+
+    (stdout, stderr1) = run_program([FFMPEG_PATH, '-v', 'error', '-y',
+                            '-i', path, '-filter:v', f"scale={width}:{height}",
+                            output_path])
+
+    if stderr1 != b"":
+        raise FFMPEG_Exception(stderr1.decode())
+
 def compress_audio(path: str, output_path: str, audio_bitrate: int):
 
     check_file_exists(path)
@@ -256,7 +277,7 @@ def compress_audio(path: str, output_path: str, audio_bitrate: int):
 
 
 
-def compress_video(path: str, output_path: str, video_bitrate: int):
+def compress_video(path: str, output_path: str, video_bitrate: int, resize: tuple = None):
 
     check_file_exists(path)
 
@@ -268,10 +289,20 @@ def compress_video(path: str, output_path: str, video_bitrate: int):
                         '-passlogfile', two_pass_log, NO_TEMP])
 
 
-    (stdout, stderr2) = run_program([FFMPEG_PATH, '-v', 'error', '-y',
+    cmd = [FFMPEG_PATH, '-v', 'error', '-y',
                         '-i', path, '-c:v', 'libx264', '-b:v', str(video_bitrate) + 'k',
                         '-pass', '2', '-an',
-                        '-passlogfile', two_pass_log, str(output_path)])
+                        ]
+
+    if resize is not None:
+        
+        (width, height) = resize
+
+        cmd.extend(['-filter:v', f"scale={width}:{height}"])
+
+    cmd.extend(['-passlogfile', two_pass_log, str(output_path)])
+
+    (stdout, stderr2) = run_program(cmd)
 
     if stderr1 != b"":
         raise FFMPEG_Exception(stderr1.decode())
@@ -315,7 +346,7 @@ def run_guided():
 
         target_video_percent = parse_float(input("Enter the video compression percentage,\nThis value should be between 0 and 1 (inclusive),\nThis value determines how much the video and audio is compressed,\nEx. 0=No video only want audio, 1=Video only and no audio, 0.5=Compress audio and video about equally\nRecommend 0.8: "), -1)
 
-        if target_video_percent < 0:
+        if target_video_percent < 0 or target_video_percent > 1:
             continue
 
         print(f"Video Percent: {target_video_percent}\n")
@@ -358,7 +389,7 @@ def main():
 
     general = parser.add_argument_group("General Options")
     general.add_argument(
-        "-h", "--help",
+        "--help",
         action="help",
         help="Print this help message and exit",
     )
@@ -376,6 +407,16 @@ def main():
         "-p", "--percent", default=0.8,
         dest="percent", metavar="xMB",
         help="Video/Audio compression, 0=No video All audio, 1=All video no audio, 0.5=Half should be video half should be audio"
+    )
+    general.add_argument(
+        "-w", "--width",
+        dest="width", metavar="X",
+        help="Resize the video to have this width before compressing (cannot be used with -h)"
+    )
+    general.add_argument(
+        "-h", "--height",
+        dest="height", metavar="X",
+        help="Resize the video to have this height before compressing (cannot be used with -w)"
     )
     general.add_argument(
         "--guided",
@@ -408,6 +449,24 @@ def main():
     if args.ffmpeg_path:
         FFMPEG_PATH = args.ffmpeg_path
 
+    new_size = None 
+
+    if args.width:
+
+        _ = parse_float(args.width, None)
+
+        if _ is not None:
+        
+            new_size = (int(_), "trunc(ow/a/2)*2")
+
+    if args.height:
+
+        _ = parse_float(args.height, None)
+
+        if _ is not None:
+        
+            new_size = ("trunc(oh*a/2)*2", int(_))
+
     target = parse_float(args.target, 8)
     percent = parse_float(args.percent, 0.8)
 
@@ -420,7 +479,7 @@ def main():
 
         try:
             print(f"Compressing: {i}:")
-            compress_file(i, target, percent)
+            compress_file(i, target, percent, new_size)
 
         except Exception as e:
             print(e)
