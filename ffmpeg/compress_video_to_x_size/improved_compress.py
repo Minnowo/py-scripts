@@ -192,14 +192,6 @@ def compress_file(path: str, target_size_mb: int, video_bitrate_percent: float, 
 
         print("compressing video...")
 
-        # if new_size is not None:
-
-        #     reduce_resolution(path, video_path2, new_size) 
-
-        #     compress_video(video_path2, video_path, video_bitrate)
-
-        # else:
-        
         compress_video(path, video_path, video_bitrate, new_size)
 
     output = get_temp_filename(file_dir, os.path.basename(path) + "-", "mp4")
@@ -236,19 +228,6 @@ def combine_to_mp4(audio_path: str, video_path: str, output_path: str):
         raise FFMPEG_Exception(stderr.decode())
 
 
-
-def reduce_resolution(path: str, output_path: str, new_size: tuple):
-
-    check_file_exists(path)
-
-    (width, height) = new_size
-
-    (stdout, stderr1) = run_program([FFMPEG_PATH, '-v', 'error', '-y',
-                            '-i', path, '-filter:v', f"scale={width}:{height}",
-                            output_path])
-
-    if stderr1 != b"":
-        raise FFMPEG_Exception(stderr1.decode())
 
 def compress_audio(path: str, output_path: str, audio_bitrate: int):
 
